@@ -55,11 +55,15 @@ export default async function handler(req, res) {
 
     const order = data.orders[0];
 
+    // Return the necessary details including line_items with variant_id
     return res.status(200).json({
       order: {
         created_at: order.created_at,
         tags: order.tags,
-        name: order.name
+        name: order.name,
+        line_items: order.line_items.map(item => ({
+          variant_id: item.variant_id
+        }))
       }
     });
   } catch (error) {
