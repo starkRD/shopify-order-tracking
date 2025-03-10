@@ -15,12 +15,9 @@ export default async function handler(req, res) {
   }
 
   // 3. Set CORS headers for actual GET requests
-  // If you want to allow any domain, use '*' instead of 'https://songcart.in'
   res.setHeader('Access-Control-Allow-Origin', 'https://songcart.in');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  // -- The rest of your order-tracking logic below --
 
   const { query } = req;
   const orderQuery = query.query;
@@ -55,12 +52,12 @@ export default async function handler(req, res) {
 
     const order = data.orders[0];
 
-    // Return the necessary details including line_items with variant_id
     return res.status(200).json({
       order: {
         created_at: order.created_at,
         tags: order.tags,
         name: order.name,
+        fulfillment_status: order.fulfillment_status,  // Added fulfillment status
         line_items: order.line_items.map(item => ({
           variant_id: item.variant_id
         }))
