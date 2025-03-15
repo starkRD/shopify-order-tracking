@@ -1,76 +1,75 @@
 // pages/api/admin-orders.js
-
 export default async function handler(req, res) {
-  // Handle OPTIONS request for CORS
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://songcart.in');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    return res.status(200).end();
-  }
-  
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }
-  
-  res.setHeader('Access-Control-Allow-Origin', 'https://songcart.in');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
-  const shopifyStore = process.env.SHOPIFY_STORE;
+
+  // Set CORS headers if needed
+  res.setHeader("Access-Control-Allow-Origin", "https://songcart.in");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  const shopifyStore = process.env.SHOPIFY_STORE; // e.g. your-store.myshopify.com
   const adminApiAccessToken = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
-  
-  // Optional: You might accept a "filter" query parameter,
-  // e.g., filter=pending or filter=today
-  const filter = req.query.filter || "pending";
-  
-  // Fetch recent orders (adjust API parameters as needed)
-  let url = `https://${shopifyStore}/admin/api/2023-01/orders.json?status=any&limit=50`;
-  
+
+  // Basic URL: fetch up to 250 orders at a time
+  let url = `https://${shopifyStore}/admin/api/2023-01/orders.json?status=any&limit=250`;
+
+  // If you only want unfulfilled:
+  // url += `&fulfillment_status=unfulfilled`;
+
+  let allOrders = [];
   try {
-    const response = await fetch(url, {
-      headers: {
-        "X-Shopify-Access-Token": adminApiAccessToken,
-        "Content-Type": "application/json"
+    while (url) {
+      const response = await fetch(url, {
+        headers: {
+          "X-Shopify-Access-Token": adminApiAccessToken,
+          "Content-Type": "application/json"
+        }
+      });
+      const linkHeader = response.headers.get("Link"); // for pagination
+      const data = await response.json();
+
+      if (!data.orders || data.orders.length === 0) {
+        // No more orders
+        break;
       }
-    });
-    const data = await response.json();
-    
-    if (!data.orders || data.orders.length === 0) {
-      return res.status(404).json({ error: "No orders found." });
+      // Accumulate the orders in our array
+      allOrders = allOrders.concat(data.orders);
+
+      // Parse the Link header to find next page, if any
+      url = getNextPageUrl(linkHeader);
     }
-    
-    // Filter orders based on fulfillment_status and/or expected delivery date.
-    // For demonstration, we'll assume:
-    // - "pending" orders are those that are not fulfilled.
-    // - "today" orders are those with an expected delivery date of today.
-    // (You'll need to compute expected delivery date based on your timeline logic.)
-    
-    // For simplicity, let's pass through all orders for now.
-    // You can later add your logic to filter them.
-    
-    // Example: return only orders that are unfulfilled if filter === "pending"
-    let filteredOrders = data.orders;
-    if (filter === "pending") {
-      filteredOrders = data.orders.filter(order => 
-        order.fulfillment_status === null || order.fulfillment_status.toLowerCase() !== "fulfilled"
-      );
-    }
-    
-    // Optionally, add computed fields such as expected_delivery based on order creation & variant IDs.
-    // (You can use similar logic as in your customer tracking code.)
-    
-    // For now, we'll return order id, created_at, fulfillment_status, and order name.
-    const ordersList = filteredOrders.map(order => ({
-      name: order.name,
-      created_at: order.created_at,
-      fulfillment_status: order.fulfillment_status,
-      // Add additional fields if needed
-    }));
-    
-    return res.status(200).json({ orders: ordersList });
+
+    // If you need further filtering (like only unfulfilled),
+    // you can do it here:
+    // allOrders = allOrders.filter(order => !order.fulfillment_status);
+
+    return res.status(200).json({ orders: allOrders });
   } catch (error) {
-    console.error("Error fetching admin orders:", error);
+    console.error("Error fetching orders with pagination:", error);
     return res.status(500).json({ error: "Server error." });
   }
+}
+
+/**
+ * Extracts the next page URL from Shopify's Link header
+ * If there's no 'rel="next"', return null.
+ * Example Link header:
+ * <https://your-store.myshopify.com/admin/api/2023-01/orders.json?limit=250&page_info=xxx>; rel="next"
+ */
+function getNextPageUrl(linkHeader) {
+  if (!linkHeader) return null;
+  // Link header can have multiple parts, but we only want the rel="next"
+  // Example: <URL1>; rel="previous", <URL2>; rel="next"
+  const links = linkHeader.split(",");
+  for (let part of links) {
+    const section = part.split(";");
+    if (section[1] && section[1].includes('rel="next"')) {
+      // section[0] is something like <https://...>
+      // remove angle brackets
+      return section[0].replace(/<(.*)>/, "$1").trim();
+    }
+  }
+  return null;
 }
